@@ -10,8 +10,9 @@ Created on Jan 29, 2021
 """
 import sys
 import numpy as np
-import tensorflow as tf
-from src.model.attention import Channel_attention
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 def _get_model(model_key: str, **kwargs):
@@ -28,8 +29,20 @@ def _get_model(model_key: str, **kwargs):
     return all_[model_key](**kwargs)
 
 
-def pixel_based_cnn(n_classes: int, input_size: int,
-                    **kwargs) -> tf.keras.Sequential:
+class Linear(nn.Module):
+    """
+
+    """
+    def __init__(self, weight, bias):
+        super(Linear, self).__init__()
+        self.weight = nn.Parameter(torch.from_numpy(weight).float(), requires_grad=False)
+        self.bias = nn.Parameter(torch.zeros(bias), requires_grad=False)
+
+    def forward(self, input):
+        return F.linear(input, self.weight, self.bias)
+
+
+class pixel_based_cnn(nn.Module):
     """
     Model for pixel-based supervised hyperspectral unmixing proposed in
     the following publication (Chicago style citation):
@@ -37,37 +50,35 @@ def pixel_based_cnn(n_classes: int, input_size: int,
     Zhang, Xiangrong, Yujia Sun, Jingyan Zhang, Peng Wu, and Licheng Jiao.
     "Hyperspectral unmixing via deep convolutional neural networks."
     IEEE Geoscience and Remote Sensing Letters 15, no. 11 (2018): 1755-1759.
-
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
     """
-    model = tf.keras.Sequential()
-    model.add(
-        tf.keras.layers.Conv3D(filters=3, kernel_size=(1, 1, 5),
-                               activation='relu',
-                               input_shape=(1, 1, input_size, 1),
-                               data_format='channels_last'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=6, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=12, kernel_size=(1, 1, 5),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=24, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=192, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=150, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='softmax'))
-    return model
+
+    def __init__(self, in_features, n_class, **kwargs):
+        super(pixel_based_cnn, self).__init__()
+        self.conv1 = nn.Conv3d(1, 3, kernel_size=(1, 1, 5))
+        self.conv2 = nn.Conv3d(3, 6, kernel_size=(1, 1, 4))
+        self.conv3 = nn.Conv3d(6, 12, kernel_size=(1, 1, 5))
+        self.conv4 = nn.Conv3d(12, 24, kernel_size=(1, 1, 4))
+
+        self.flatten = nn.Flatten()
+
+        self.fc1 = nn.Linear(in_features=in_features, out_features=192)
+        self.fc2 = nn.Linear(in_features=192, out_features=150)
+        self.fc3 = nn.Linear(in_features=150, out_features=n_class)
+
+    def forward(self, x):
+        x = F.max_pool3d(F.relu(self.conv1(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv2(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv3(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv4(x)), kernel_size=(1, 1, 2))
+
+        x = F.relu(self.fc1(self.flatten(x)))
+        x = F.relu(self.fc2(x))
+        x = F.softmax(self.fc3(x), dim=1)
+
+        return x
 
 
-def cube_based_cnn(n_classes: int, input_size: int,
-                   **kwargs) -> tf.keras.Sequential:
+class cube_based_cnn(nn.Module):
     """
     Model for cube-based supervised hyperspectral unmixing proposed in
     the following publication (Chicago style citation):
@@ -75,36 +86,35 @@ def cube_based_cnn(n_classes: int, input_size: int,
     Zhang, Xiangrong, Yujia Sun, Jingyan Zhang, Peng Wu, and Licheng Jiao.
     "Hyperspectral unmixing via deep convolutional neural networks."
     IEEE Geoscience and Remote Sensing Letters 15, no. 11 (2018): 1755-1759.
-
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
     """
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv3D(filters=16, kernel_size=(1, 1, 5),
-                                     activation='relu',
-                                     input_shape=(kwargs['neighborhood_size'],
-                                                  kwargs['neighborhood_size'],
-                                                  input_size, 1),
-                                     data_format='channels_last'))
-    model.add(tf.keras.layers.Conv3D(filters=32, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Conv3D(filters=64, kernel_size=(1, 1, 5),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Dropout(rate=0.2))
-    model.add(tf.keras.layers.Conv3D(filters=128, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Dropout(rate=0.2))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=192, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=150, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='softmax'))
-    return model
+
+    def __init__(self, in_features, n_class, **kwargs):
+        super(cube_based_cnn, self).__init__()
+        self.conv1 = nn.Conv3d(1, 16, kernel_size=(1, 1, 5))
+        self.conv2 = nn.Conv3d(16, 32, kernel_size=(1, 1, 4))
+        self.conv3 = nn.Conv3d(32, 64, kernel_size=(1, 1, 5))
+        self.conv4 = nn.Conv3d(64, 128, kernel_size=(1, 1, 4))
+
+        self.flatten = nn.Flatten()
+
+        self.fc1 = nn.Linear(in_features=in_features, out_features=192)
+        self.fc2 = nn.Linear(in_features=192, out_features=150)
+        self.fc3 = nn.Linear(in_features=150, out_features=n_class)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.dropout3d(F.relu(self.conv3(x)), p=0.2)
+        x = F.dropout3d(F.relu(self.conv4(x)), p=0.2)
+
+        x = F.relu(self.fc1(self.flatten(x)))
+        x = F.relu(self.fc2(x))
+        x = F.softmax(self.fc3(x), dim=1)
+
+        return x
 
 
-def pixel_based_dcae(n_classes: int, input_size: int,
-                     **kwargs) -> tf.keras.Sequential:
+class pixel_based_dcae(nn.Module):
     """
     Model for pixel-based unsupervised hyperspectral unmixing proposed in
     the following publication (Chicago style citation):
@@ -114,49 +124,39 @@ def pixel_based_dcae(n_classes: int, input_size: int,
     in a supervised scenario."
     IEEE Journal of Selected Topics in Applied Earth Observations
     and Remote Sensing 13 (2020): 567-576.
-
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
     """
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv3D(filters=2, kernel_size=(1, 1, 3),
-                                     activation='relu',
-                                     input_shape=(1, 1, input_size, 1),
-                                     data_format='channels_last'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=4, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=8, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=16, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=32, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=256, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='relu'))
-    model.add(tf.keras.layers.Softmax())
-    # Decoder part (later to be dropped):
-    model.add(tf.keras.layers.Dense(units=input_size, activation='relu'))
-    # Set the endmembers weights to be equal to the endmembers matrix i.e.,
-    # the spectral signatures of each class:
-    model.layers[-1].set_weights(
-        (np.swapaxes(kwargs['endmembers'], 1, 0), np.zeros(input_size)))
-    # Freeze the last layer which must be equal to endmembers
-    # and residual term (zero vector):
-    model.layers[-1].trainable = False
-    return model
+
+    def __init__(self, in_features, n_class, **kwargs):
+        super(pixel_based_dcae, self).__init__()
+        self.conv1 = nn.Conv3d(1, 2, kernel_size=(1, 1, 3))
+        self.conv2 = nn.Conv3d(2, 4, kernel_size=(1, 1, 3))
+        self.conv3 = nn.Conv3d(4, 8, kernel_size=(1, 1, 3))
+        self.conv4 = nn.Conv3d(8, 16, kernel_size=(1, 1, 3))
+        self.conv5 = nn.Conv3d(16, 32, kernel_size=(1, 1, 3))
+
+        self.flatten = nn.Flatten()
+
+        self.fc1 = nn.Linear(in_features=in_features, out_features=256)
+        self.fc2 = nn.Linear(in_features=256, out_features=n_class)
+        self.fc3 = Linear(weight=kwargs['endmembers'], bias=kwargs['input_size'])
+
+    def forward(self, x):
+        x = F.max_pool3d(F.relu(self.conv1(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv2(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv3(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv4(x)), kernel_size=(1, 1, 2))
+        x = F.relu(self.conv5(x))
+
+        x = F.relu(self.fc1(self.flatten(x)))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+
+        return x
 
 
-def cube_based_dcae(n_classes: int, input_size: int,
-                    **kwargs) -> tf.keras.Sequential:
+class pixel_based_dcae_load(nn.Module):
     """
-    Model for cube-based unsupervised hyperspectral unmixing proposed in
+    Model for pixel-based unsupervised hyperspectral unmixing proposed in
     the following publication (Chicago style citation):
 
     Khajehrayeni, Farshid, and Hassan Ghassemian.
@@ -164,208 +164,29 @@ def cube_based_dcae(n_classes: int, input_size: int,
     in a supervised scenario."
     IEEE Journal of Selected Topics in Applied Earth Observations
     and Remote Sensing 13 (2020): 567-576.
-
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
-    """
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv3D(filters=16, kernel_size=(3, 3, 3),
-                                     activation='relu',
-                                     input_shape=(kwargs['neighborhood_size'],
-                                                  kwargs['neighborhood_size'],
-                                                  input_size, 1),
-                                     data_format='channels_last'))
-    model.add(tf.keras.layers.Conv3D(filters=32, kernel_size=(3, 3, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Conv3D(filters=64, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Conv3D(filters=128, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=256, activation='relu'))
-    model.add(tf.keras.layers.Dropout(rate=0.2))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='relu'))
-    model.add(tf.keras.layers.Softmax())
-    # Decoder part (later to be dropped):
-    model.add(tf.keras.layers.Dense(units=input_size, activation='linear'))
-    # Set the endmembers weights to be equal to the endmembers matrix i.e.,
-    # the spectral signatures of each class:
-    model.layers[-1].set_weights(
-        (np.swapaxes(kwargs['endmembers'], 1, 0), np.zeros(input_size)))
-    # Freeze the last layer which must be equal to endmembers
-    # and residual term (zero vector):
-    model.layers[-1].trainable = False
-    return model
-
-
-def rnn_supervised(n_classes: int, **kwargs) -> tf.keras.Sequential:
-    """
-    Model for the unmixing which utilizes a recurrent neural network (RNN)
-    for extracting valuable information from the spectral domain
-    in an supervised manner.
-
-    :param n_classes: Number of classes.
-    :param kwargs: Additional arguments.
-    :return: RNN model instance.
-    """
-    model = tf.keras.Sequential()
-    model.add(
-        tf.keras.layers.GRU(units=8, input_shape=(kwargs['input_size'], 1),
-                            return_sequences=True))
-    model.add(tf.keras.layers.GRU(units=32, return_sequences=True))
-    model.add(tf.keras.layers.GRU(units=128, return_sequences=True))
-    model.add(tf.keras.layers.GRU(units=512, return_sequences=False))
-
-    model.add(tf.keras.layers.Dense(n_classes, activation='softmax'))
-    return model
-
-
-# ############################ attention ############################
-def attention_pixel_based_cnn(n_classes: int, input_size: int,
-                              **kwargs) -> tf.keras.Sequential:
     """
 
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
-    """
-    model = tf.keras.Sequential()
-    model.add(
-        tf.keras.layers.Conv3D(filters=3, kernel_size=(1, 1, 5),
-                               activation='relu',
-                               input_shape=(1, 1, input_size, 1),
-                               data_format='channels_last'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=6, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=12, kernel_size=(1, 1, 5),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(Channel_attention())
-    model.add(tf.keras.layers.Conv3D(filters=24, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=192, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=150, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='softmax'))
-    return model
+    def __init__(self, in_features, n_class, **kwargs):
+        super(pixel_based_dcae_load, self).__init__()
+        self.conv1 = nn.Conv3d(1, 2, kernel_size=(1, 1, 3))
+        self.conv2 = nn.Conv3d(2, 4, kernel_size=(1, 1, 3))
+        self.conv3 = nn.Conv3d(4, 8, kernel_size=(1, 1, 3))
+        self.conv4 = nn.Conv3d(8, 16, kernel_size=(1, 1, 3))
+        self.conv5 = nn.Conv3d(16, 32, kernel_size=(1, 1, 3))
 
+        self.flatten = nn.Flatten()
 
-def attention_cube_based_cnn(n_classes: int, input_size: int,
-                             **kwargs) -> tf.keras.Sequential:
-    """
+        self.fc1 = nn.Linear(in_features=in_features, out_features=256)
+        self.fc2 = nn.Linear(in_features=256, out_features=n_class)
 
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
-    """
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv3D(filters=16, kernel_size=(1, 1, 5),
-                                     activation='relu',
-                                     input_shape=(kwargs['neighborhood_size'],
-                                                  kwargs['neighborhood_size'],
-                                                  input_size, 1),
-                                     data_format='channels_last'))
-    model.add(tf.keras.layers.Conv3D(filters=32, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Conv3D(filters=64, kernel_size=(1, 1, 5),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Dropout(rate=0.2))
-    model.add(Channel_attention())
-    model.add(tf.keras.layers.Conv3D(filters=128, kernel_size=(1, 1, 4),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Dropout(rate=0.2))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=192, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=150, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='softmax'))
-    return model
+    def forward(self, x):
+        x = F.max_pool3d(F.relu(self.conv1(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv2(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv3(x)), kernel_size=(1, 1, 2))
+        x = F.max_pool3d(F.relu(self.conv4(x)), kernel_size=(1, 1, 2))
+        x = F.relu(self.conv5(x))
 
+        x = F.relu(self.fc1(self.flatten(x)))
+        x = F.relu(self.fc2(x))
 
-def attention_pixel_based_dcae(n_classes: int, input_size: int,
-                               **kwargs) -> tf.keras.Sequential:
-    """
-
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
-    """
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv3D(filters=2, kernel_size=(1, 1, 3),
-                                     activation='relu',
-                                     input_shape=(1, 1, input_size, 1),
-                                     data_format='channels_last'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=4, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=8, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(tf.keras.layers.Conv3D(filters=16, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.MaxPool3D(pool_size=(1, 1, 2)))
-    model.add(Channel_attention())
-    model.add(tf.keras.layers.Conv3D(filters=32, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=256, activation='relu'))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='relu'))
-    model.add(tf.keras.layers.Softmax())
-    # Decoder part (later to be dropped):
-    model.add(tf.keras.layers.Dense(units=input_size, activation='relu'))
-    # Set the endmembers weights to be equal to the endmembers matrix i.e.,
-    # the spectral signatures of each class:
-    model.layers[-1].set_weights(
-        (np.swapaxes(kwargs['endmembers'], 1, 0), np.zeros(input_size)))
-    # Freeze the last layer which must be equal to endmembers
-    # and residual term (zero vector):
-    model.layers[-1].trainable = False
-    return model
-
-
-def attention_cube_based_dcae(n_classes: int, input_size: int,
-                              **kwargs) -> tf.keras.Sequential:
-    """
-
-    :param n_classes: Number of classes.
-    :param input_size: Number of input spectral bands.
-    :param kwargs: Additional arguments.
-    :return: Model proposed in the publication listed above.
-    """
-    model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Conv3D(filters=16, kernel_size=(3, 3, 3),
-                                     activation='relu',
-                                     input_shape=(kwargs['neighborhood_size'],
-                                                  kwargs['neighborhood_size'],
-                                                  input_size, 1),
-                                     data_format='channels_last'))
-    model.add(tf.keras.layers.Conv3D(filters=32, kernel_size=(3, 3, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Conv3D(filters=64, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(Channel_attention())
-    model.add(tf.keras.layers.Conv3D(filters=128, kernel_size=(1, 1, 3),
-                                     activation='relu'))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(units=256, activation='relu'))
-    model.add(tf.keras.layers.Dropout(rate=0.2))
-    model.add(tf.keras.layers.Dense(units=n_classes, activation='relu'))
-    model.add(tf.keras.layers.Softmax())
-    # Decoder part (later to be dropped):
-    model.add(tf.keras.layers.Dense(units=input_size, activation='linear'))
-    # Set the endmembers weights to be equal to the endmembers matrix i.e.,
-    # the spectral signatures of each class:
-    model.layers[-1].set_weights(
-        (np.swapaxes(kwargs['endmembers'], 1, 0), np.zeros(input_size)))
-    # Freeze the last layer which must be equal to endmembers
-    # and residual term (zero vector):
-    model.layers[-1].trainable = False
-    return model
+        return x

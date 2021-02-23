@@ -7,40 +7,35 @@ Created on Jan 29, 2021
 @contact: laugh12321@vip.qq.com
 """
 import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-
-import tensorflow as tf
 from config.get_config import get_config
 
 from src.model import enums
 from src.utils.utils import parse_train_size, subsample_test_set
 from src.utils import prepare_data, artifacts_reporter
-from src.model import evaluate_unmixing, train_unmixing
-from src.model.models import pixel_based_dcae, cube_based_dcae, \
-    pixel_based_cnn, cube_based_cnn, attention_pixel_based_dcae, \
-    attention_cube_based_dcae, attention_pixel_based_cnn, attention_cube_based_cnn
+from src.model import train_evaluate
+from src.model.models import pixel_based_cnn, cube_based_cnn, pixel_based_dcae
 
 # Literature hyperparameters settings:
 NEIGHBORHOOD_SIZES = {
-    cube_based_dcae.__name__: 5,
+    # cube_based_dcae.__name__: 5,
     cube_based_cnn.__name__: 3,
-
-    attention_cube_based_dcae.__name__: 5,
-    attention_cube_based_cnn.__name__: 3
+    #
+    # attention_cube_based_dcae.__name__: 5,
+    # attention_cube_based_cnn.__name__: 3
 }
 
 LEARNING_RATES = {
     pixel_based_dcae.__name__: 0.001,
-    cube_based_dcae.__name__: 0.0005,
+    # cube_based_dcae.__name__: 0.0005,
 
     pixel_based_cnn.__name__: 0.01,
-    cube_based_cnn.__name__: 0.001,
-
-    attention_pixel_based_dcae.__name__: 0.001,
-    attention_cube_based_dcae.__name__: 0.0005,
-
-    attention_pixel_based_cnn.__name__: 0.01,
-    attention_cube_based_cnn.__name__: 0.001
+    cube_based_cnn.__name__: 0.001
+    #
+    # attention_pixel_based_dcae.__name__: 0.001,
+    # attention_cube_based_dcae.__name__: 0.0005,
+    #
+    # attention_pixel_based_cnn.__name__: 0.01,
+    # attention_cube_based_cnn.__name__: 0.001
 }
 
 
@@ -60,7 +55,6 @@ def run_experiments(*,
                     lr: float = None,
                     batch_size: int = 256,
                     epochs: int = 100,
-                    verbose: int = 2,
                     shuffle: bool = True,
                     patience: int = 15,
                     endmembers_path: str = None):
@@ -94,7 +88,6 @@ def run_experiments(*,
     :param batch_size: Size of the batch used in training phase,
         it is the size of samples per gradient step.
     :param epochs: Number of epochs for model to train.
-    :param verbose: Verbosity mode used in training, (0, 1 or 2).
     :param shuffle: Boolean indicating whether to shuffle datasets.
     :param patience: Number of epochs without improvement in order to
         stop the training phase.
@@ -123,34 +116,24 @@ def run_experiments(*,
                                  seed=experiment_id)
         if sub_test_size is not None:
             subsample_test_set(data[enums.Dataset.TEST], sub_test_size)
-        train_unmixing.train(model_name=model_name,
-                             dest_path=experiment_dest_path,
-                             data=data,
-                             sample_size=sample_size,
-                             neighborhood_size=neighborhood_size,
-                             n_classes=n_classes,
-                             lr=lr,
-                             batch_size=batch_size,
-                             epochs=epochs,
-                             verbose=verbose,
-                             shuffle=shuffle,
-                             patience=patience,
-                             endmembers_path=endmembers_path,
-                             seed=experiment_id)
-
-        evaluate_unmixing.evaluate(
-            model_name=model_name,
-            data=data,
-            dest_path=experiment_dest_path,
-            neighborhood_size=neighborhood_size,
-            batch_size=batch_size,
-            endmembers_path=endmembers_path)
-
-        tf.keras.backend.clear_session()
-
-    artifacts_reporter.collect_artifacts_report(
-        experiments_path=dest_path,
-        dest_path=dest_path)
+        train_evaluate.fit(model_name=model_name,
+                           dest_path=experiment_dest_path,
+                           data=data,
+                           neighborhood_size=neighborhood_size,
+                           n_classes=n_classes,
+                           sample_size=sample_size,
+                           lr=lr,
+                           batch_size=batch_size,
+                           epochs=epochs,
+                           shuffle=shuffle,
+                           patience=patience,
+                           endmembers_path=endmembers_path,
+                           num_workers=2,
+                           seed=experiment_id)
+    #
+    # artifacts_reporter.collect_artifacts_report(
+    #     experiments_path=dest_path,
+    #     dest_path=dest_path)
 
 
 if __name__ == '__main__':
@@ -187,6 +170,5 @@ if __name__ == '__main__':
                             n_classes=n_classes,
                             batch_size=args.batch_size,
                             epochs=args.epochs,
-                            verbose=args.verbose,
                             patience=args.patience,
                             n_runs=args.n_runs)

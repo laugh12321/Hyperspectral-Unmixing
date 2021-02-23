@@ -47,21 +47,17 @@ def load_metrics(experiments_path: str, filename: str = None) -> Dict[
     return all_metrics
 
 
-def save_metrics(dest_path: str, metrics: Dict[str, List],
-                 file_name: str = None):
+def save_metrics(dest_path, metrics, filename=None):
     """
-    Save given dictionary of metrics.
+    Save given dataframe of metrics.
 
     :param dest_path: Destination path.
-    :param file_name: Name to save the file.
+    :param filename: Name to save the file.
     :param metrics: Dictionary containing all metrics.
     """
-    if file_name is not None:
-        dest_path = os.path.join(dest_path, file_name)
-    with open(dest_path, 'w', newline='') as file:
-        write = csv.writer(file)
-        write.writerow(metrics.keys())
-        write.writerows(zip(*metrics.values()))
+    if filename is not None:
+        dest_path = os.path.join(dest_path, filename)
+    metrics.to_csv(dest_path, index=False, header=True)
 
 
 def load_npy(data_file_path: str, gt_input_path: str) -> Tuple[np.ndarray, np.ndarray]:

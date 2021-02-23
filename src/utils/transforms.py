@@ -13,9 +13,7 @@ import numpy as np
 from typing import List, Dict
 
 from src.model import enums
-from src.model.models import pixel_based_dcae, cube_based_dcae, \
-    pixel_based_cnn, cube_based_cnn, rnn_supervised, attention_pixel_based_dcae, \
-    attention_cube_based_dcae, attention_pixel_based_cnn, attention_cube_based_cnn
+from src.model.models import pixel_based_cnn, cube_based_cnn, pixel_based_dcae
 
 
 class BaseTransform(abc.ABC):
@@ -46,7 +44,7 @@ class SpectralTransform(BaseTransform):
         :param labels: Class value for each samples.
         :return: List containing the transformed samples and the class labels.
         """
-        return [np.expand_dims(samples.astype(np.float32), -1), labels]
+        return [np.expand_dims(samples.astype(np.float32), 1), labels]
 
 
 class MinMaxNormalize(BaseTransform):
@@ -88,22 +86,6 @@ def apply_transformations(data: Dict,
     return data
 
 
-class RNNSpectralInputTransform(BaseTransform):
-
-    def __call__(self, samples: np.ndarray,
-                 labels: np.ndarray) -> List[np.ndarray]:
-        """"
-        Transform the input samples to fit the recurrent
-        neural network (RNN) input.
-        This is performed for the pixel-based model;
-        the input sample includes only spectral bands.
-        :param samples: Input samples that will undergo the transformation.
-        :param labels: Class values for each sample.
-        :return: List containing the normalized samples and the class labels.
-        """
-        return [np.expand_dims(np.squeeze(samples), -1), labels]
-
-
 class ExtractCentralPixelSpectrumTransform(BaseTransform):
     def __init__(self, neighborhood_size: int):
         """
@@ -137,22 +119,10 @@ UNMIXING_TRANSFORMS = {
     pixel_based_dcae.__name__:
         [ExtractCentralPixelSpectrumTransform,
          SpectralTransform],
-    cube_based_dcae.__name__:
-        [ExtractCentralPixelSpectrumTransform,
-         SpectralTransform],
+    # cube_based_dcae.__name__:
+    #     [ExtractCentralPixelSpectrumTransform,
+    #      SpectralTransform],
 
     pixel_based_cnn.__name__: [SpectralTransform],
-    cube_based_cnn.__name__: [SpectralTransform],
-
-    attention_pixel_based_dcae.__name__:
-        [ExtractCentralPixelSpectrumTransform,
-         SpectralTransform],
-    attention_cube_based_dcae.__name__:
-        [ExtractCentralPixelSpectrumTransform,
-         SpectralTransform],
-
-    attention_pixel_based_cnn.__name__: [SpectralTransform],
-    attention_cube_based_cnn.__name__: [SpectralTransform],
-
-    rnn_supervised.__name__: [RNNSpectralInputTransform]
+    cube_based_cnn.__name__: [SpectralTransform]
 }

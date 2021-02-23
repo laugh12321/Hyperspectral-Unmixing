@@ -11,6 +11,7 @@ placed in the "experiments_path" directory.
 """
 import os
 import numpy as np
+import pandas as pd
 
 import src.utils.io as io
 
@@ -49,6 +50,7 @@ def collect_artifacts_report(*,
             np.mean(artifacts[key]), np.std(artifacts[key]),
             np.min(artifacts[key]), np.max(artifacts[key])
         ]
+        stat_report = pd.DataFrame(stat_report)
     if len(os.path.splitext(dest_path)[EXTENSION]) != 0:
         io.save_metrics(dest_path, stat_report)
     else:

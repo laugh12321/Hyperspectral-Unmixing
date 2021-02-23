@@ -117,7 +117,7 @@ def get_central_pixel_spectrum(data: np.ndarray,
     """
     if neighborhood_size is not None:
         central_index = np.floor(neighborhood_size / 2).astype(int)
-        return np.squeeze(data[:, central_index, central_index])
+        return np.squeeze(data[:, :, central_index, central_index])
     return np.squeeze(data)
 
 

@@ -8,28 +8,14 @@ Created on Jan 29, 2021
 @author: laugh12321
 @contact: laugh12321@vip.qq.com
 """
+import torch
 import numpy as np
-import tensorflow as tf
 from typing import Dict, List
 
-from src.model.models import pixel_based_dcae, cube_based_dcae, \
-    pixel_based_cnn, cube_based_cnn, rnn_supervised, attention_pixel_based_dcae, \
-    attention_cube_based_dcae, attention_pixel_based_cnn, attention_cube_based_cnn
+from src.model.models import pixel_based_cnn, cube_based_cnn, pixel_based_dcae
 
 
-def convert_to_tensor(metric_function):
-    def wrapper(y_true: np.ndarray, y_pred: np.ndarray):
-        if not isinstance(y_true, tf.Tensor):
-            y_true = tf.cast(tf.convert_to_tensor(y_true), tf.float32)
-        if not isinstance(y_pred, tf.Tensor):
-            y_pred = tf.cast(tf.convert_to_tensor(y_pred), tf.float32)
-        return metric_function(y_true=y_true, y_pred=y_pred)
-
-    return wrapper
-
-
-def spectral_information_divergence_loss(y_true: tf.Tensor,
-                                         y_pred: tf.Tensor) -> tf.Tensor:
+def spectral_information_divergence_loss(y_true, y_pred):
     """
     Calculate the spectral information divergence loss,
     which is based on the divergence in information theory.
@@ -46,21 +32,17 @@ def spectral_information_divergence_loss(y_true: tf.Tensor,
     [n_samples, n_classes], [n_samples, n_bands].
     :return: The spectral information divergence loss.
     """
-    y_true_row_sum = tf.reduce_sum(y_true, 1)
-    y_pred_row_sum = tf.reduce_sum(y_pred, 1)
-    y_true = y_true / tf.reshape(y_true_row_sum, (-1, 1))
-    y_pred = y_pred / tf.reshape(y_pred_row_sum, (-1, 1))
-    y_true, y_pred = tf.keras.backend.clip(y_true,
-                                           tf.keras.backend.epsilon(), 1), \
-                     tf.keras.backend.clip(y_pred,
-                                           tf.keras.backend.epsilon(), 1)
-    loss = tf.reduce_sum(y_true * tf.math.log(y_true / y_pred)) + \
-           tf.reduce_sum(y_pred * tf.math.log(y_pred / y_true))
+    y_true_row_sum = torch.sum(y_true, 1)
+    y_pred_row_sum = torch.sum(y_pred, 1)
+    y_true = y_true / torch.reshape(y_true_row_sum, (-1, 1))
+    y_pred = y_pred / torch.reshape(y_pred_row_sum, (-1, 1))
+    y_true, y_pred = torch.clamp(y_true, torch.finfo(torch.float32).eps, 1), \
+                     torch.clamp(y_pred, torch.finfo(torch.float32).eps, 1)
+    loss = torch.sum(y_true * torch.log(y_true / y_pred)) + torch.sum(y_pred * torch.log(y_pred / y_true))
     return loss
 
 
-def average_angle_spectral_mapper(y_true: tf.Tensor,
-                                  y_pred: tf.Tensor) -> tf.Tensor:
+def average_angle_spectral_mapper(y_true, y_pred):
     """
     Calculate the dcae average angle spectral mapper value.
 
@@ -78,16 +60,16 @@ def average_angle_spectral_mapper(y_true: tf.Tensor,
         its reconstruction of shape: [n_samples, n_bands].
     :return: The root-mean square abundance angle distance error.
     """
-    numerator = tf.reduce_sum(tf.multiply(y_true, y_pred), 1)
-    y_true_len = tf.sqrt(tf.reduce_sum(tf.square(y_true), 1))
-    y_pred_len = tf.sqrt(tf.reduce_sum(tf.square(y_pred), 1))
-    denominator = tf.multiply(y_true_len, y_pred_len)
-    loss = tf.reduce_mean(tf.acos(
-        tf.clip_by_value(numerator / denominator, -1, 1)))
+    numerator = torch.sum(torch.mul(y_true, y_pred), 1)
+    y_true_len = torch.sqrt(torch.sum(torch.square(y_true), 1))
+    y_pred_len = torch.sqrt(torch.sum(torch.square(y_pred), 1))
+    denominator = torch.mul(y_true_len, y_pred_len)
+    loss = torch.mean(torch.acos(torch.clamp(numerator / denominator, -1, 1)))
+
     return loss
 
 
-def dcae_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+def dcae_rmse(y_true, y_pred):
     """
     Calculate the custom dcae root-mean square error,
     which measures the similarity between the original abundance
@@ -104,12 +86,10 @@ def dcae_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     :param y_pred: Predicted abundances of shape: [n_samples, n_classes].
     :return: The root-mean square error.
     """
-    return tf.reduce_mean(tf.sqrt(tf.reduce_mean(
-        tf.square(y_pred - y_true), axis=1)))
+    return torch.mean(torch.sqrt(torch.mean(torch.square(y_pred - y_true), 1)))
 
 
-def overall_rms_abundance_angle_distance(y_true: tf.Tensor,
-                                         y_pred: tf.Tensor) -> tf.Tensor:
+def overall_rms_abundance_angle_distance(y_true, y_pred):
     """
     Calculate the cnn root-mean square abundance angle distance,
     which measures the similarity between the original abundance fractions
@@ -129,16 +109,16 @@ def overall_rms_abundance_angle_distance(y_true: tf.Tensor,
     :param y_pred: Predicted abundances of shape: [n_samples, n_classes].
     :return: The root-mean square abundance angle distance error.
     """
-    numerator = tf.reduce_sum(tf.multiply(y_true, y_pred), 1)
-    y_true_len = tf.sqrt(tf.reduce_sum(tf.square(y_true), 1))
-    y_pred_len = tf.sqrt(tf.reduce_sum(tf.square(y_pred), 1))
-    denominator = tf.multiply(y_true_len, y_pred_len)
-    loss = tf.sqrt(tf.reduce_mean(tf.square(tf.acos(
-        tf.clip_by_value(numerator / denominator, -1, 1)))))
+    numerator = torch.sum(torch.mul(y_true, y_pred))
+    y_true_len = torch.sqrt(torch.sum(torch.square(y_true)))
+    y_pred_len = torch.sqrt(torch.sum(torch.square(y_pred)))
+    denominator = torch.mul(y_true_len, y_pred_len)
+    loss = torch.sqrt(torch.mean(torch.square(torch.acos(
+        torch.clamp(numerator / denominator, -1, 1)))))
     return loss
 
 
-def sum_per_class_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+def sum_per_class_rmse(y_true, y_pred):
     """
     Calculate the sum of per class root-mean square error.
 
@@ -147,10 +127,10 @@ def sum_per_class_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     :param y_pred: Predicted abundances of shape: [n_samples, n_classes].
     :return: The sum of per class root-mean square error.
     """
-    return tf.reduce_sum(per_class_rmse(y_true=y_true, y_pred=y_pred))
+    return torch.mean(per_class_rmse(y_true=y_true, y_pred=y_pred))
 
 
-def per_class_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+def per_class_rmse(y_true, y_pred):
     """
     Calculate the per class root-mean square error vector.
 
@@ -159,10 +139,10 @@ def per_class_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     :param y_pred: Predicted abundances of shape: [n_samples, n_classes].
     :return: The root-mean square error vector.
     """
-    return tf.sqrt(tf.reduce_mean((y_true - y_pred) ** 2, 0))
+    return torch.sqrt(torch.mean((y_true - y_pred) ** 2, 0))
 
 
-def cnn_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+def cnn_rmse(y_true, y_pred):
     """
     Calculate the custom cnn root-mean square error, which measures the
     similarity between the original abundance fractions and the predicted ones.
@@ -176,31 +156,17 @@ def cnn_rmse(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     :param y_pred: Predicted abundances of shape: [n_samples, n_classes].
     :return: The root-mean square error.
     """
-    return tf.sqrt(tf.reduce_mean((y_true - y_pred) ** 2))
+    return torch.sqrt(torch.mean((y_true - y_pred) ** 2))
 
 
 UNMIXING_TRAIN_METRICS = {
     pixel_based_dcae.__name__: [spectral_information_divergence_loss],
-    cube_based_dcae.__name__: [spectral_information_divergence_loss],
+    # cube_based_dcae.__name__: [spectral_information_divergence_loss],
 
     pixel_based_cnn.__name__: [cnn_rmse,
                                overall_rms_abundance_angle_distance,
                                sum_per_class_rmse],
     cube_based_cnn.__name__: [cnn_rmse,
-                              overall_rms_abundance_angle_distance,
-                              sum_per_class_rmse],
-
-    attention_pixel_based_dcae.__name__: [spectral_information_divergence_loss],
-    attention_cube_based_dcae.__name__: [spectral_information_divergence_loss],
-
-    attention_pixel_based_cnn.__name__: [cnn_rmse,
-                                         overall_rms_abundance_angle_distance,
-                                         sum_per_class_rmse],
-    attention_cube_based_cnn.__name__: [cnn_rmse,
-                                        overall_rms_abundance_angle_distance,
-                                        sum_per_class_rmse],
-
-    rnn_supervised.__name__: [cnn_rmse,
                               overall_rms_abundance_angle_distance,
                               sum_per_class_rmse]
 }
@@ -215,18 +181,10 @@ UNMIXING_TEST_METRICS = {
 
 UNMIXING_LOSSES = {
     pixel_based_dcae.__name__: spectral_information_divergence_loss,
-    cube_based_dcae.__name__: spectral_information_divergence_loss,
+    # cube_based_dcae.__name__: spectral_information_divergence_loss,
 
-    pixel_based_cnn.__name__: 'mse',
-    cube_based_cnn.__name__: 'mse',
-
-    attention_pixel_based_dcae.__name__: spectral_information_divergence_loss,
-    attention_cube_based_dcae.__name__: spectral_information_divergence_loss,
-
-    attention_pixel_based_cnn.__name__: 'mse',
-    attention_cube_based_cnn.__name__: 'mse',
-
-    rnn_supervised.__name__: 'mse'
+    pixel_based_cnn.__name__: torch.nn.MSELoss(),
+    cube_based_cnn.__name__: torch.nn.MSELoss()
 }
 
 
@@ -237,23 +195,15 @@ def calculate_unmixing_metrics(**kwargs) -> Dict[str, List[float]]:
     :param kwargs: Additional keyword arguments.
     """
     model_metrics = {}
-    print(kwargs['y_pred'].shape)
     for f_name, f_metric in UNMIXING_TEST_METRICS.items():
-        model_metrics[f_name] = [float(convert_to_tensor(f_metric)
-                                       (y_true=kwargs['y_true'],
-                                        y_pred=kwargs['y_pred']))]
+        model_metrics[f_name] = [float(f_metric(y_true=kwargs['y_true'], y_pred=kwargs['y_pred']))]
 
-    for class_idx, class_rmse in enumerate(convert_to_tensor(per_class_rmse)(
-            y_true=kwargs['y_true'], y_pred=kwargs['y_pred'])):
+    for class_idx, class_rmse in enumerate(per_class_rmse(y_true=kwargs['y_true'],
+                                                          y_pred=kwargs['y_pred'])):
         model_metrics[f'class{class_idx}RMSE'] = [float(class_rmse)]
     if kwargs['endmembers'] is not None:
         # Calculate the reconstruction RMSE and SID losses:
-        x_pred = np.matmul(kwargs['y_pred'], kwargs['endmembers'].T)
-        model_metrics['rRMSE'] = [float(convert_to_tensor(dcae_rmse)
-                                        (y_true=kwargs['x_true'],
-                                         y_pred=x_pred))]
-        model_metrics['rSID'] = [float(convert_to_tensor(
-            spectral_information_divergence_loss)
-                                       (y_true=kwargs['x_true'],
-                                        y_pred=x_pred))]
+        x_pred = torch.matmul(kwargs['y_pred'], kwargs['endmembers'].float())
+        model_metrics['rRMSE'] = [dcae_rmse(y_true=kwargs['x_true'],  y_pred=x_pred)]
+        model_metrics['rSID'] = [spectral_information_divergence_loss(y_true=kwargs['x_true'], y_pred=x_pred)]
     return model_metrics
